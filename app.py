@@ -265,6 +265,9 @@ def initialize_session_state():
                     "product_min", "product_max", "num_results"]:
             if key in st.session_state:
                 del st.session_state[key]
+        # Clear any derived state so the UI and results fully reset
+        st.session_state.design_result = None
+        st.session_state.selected_pair_idx = 0
         st.session_state.thresholds = QCThresholds()
 
     if "design_result" not in st.session_state:
@@ -282,6 +285,17 @@ def request_reset():
     st.session_state._reset_requested = True
 
 
+def clear_for_new_design():
+    """Clear sequence inputs and results for a new design session."""
+    # Clear file uploader by incrementing its key suffix
+    st.session_state._file_uploader_key = st.session_state.get("_file_uploader_key", 0) + 1
+    # Clear text area
+    st.session_state.raw_sequence_input = ""
+    # Clear design results
+    st.session_state.design_result = None
+    st.session_state.selected_pair_idx = 0
+
+
 # -----------------------------------------------------------------------------
 # Sidebar - Input Panel
 # -----------------------------------------------------------------------------
@@ -290,23 +304,32 @@ def render_sidebar() -> tuple[Optional[str], Optional[str], QCThresholds, int]:
     """Render the sidebar input panel."""
 
     with st.sidebar:
+        # New Design button at top
+        if st.button("🔄 New Design", use_container_width=True, help="Clear current sequence and start fresh"):
+            clear_for_new_design()
+            st.rerun()
+
+        st.markdown("---")
         st.markdown("### Input Sequence")
 
-        # FASTA file uploader
+        # FASTA file uploader (key changes when cleared)
+        file_key = f"file_uploader_{st.session_state.get('_file_uploader_key', 0)}"
         uploaded_file = st.file_uploader(
             "Upload FASTA file",
             type=["fasta", "fa", "fna", "txt"],
             help="Upload a FASTA file containing the target sequence",
+            key=file_key,
         )
 
         st.markdown("**OR**")
 
-        # Raw sequence text area
+        # Raw sequence text area (with key for clearing)
         raw_sequence = st.text_area(
             "Paste sequence",
             height=120,
             placeholder="ATGCGATCGATCGATCG...",
             help="Paste a raw nucleotide sequence or FASTA-formatted text",
+            key="raw_sequence_input",
         )
 
         st.markdown("---")
