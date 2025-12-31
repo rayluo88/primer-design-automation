@@ -198,3 +198,78 @@ def pair_to_dict(pair: PrimerPair) -> Dict[str, Any]:
             "three_prime_base": pair.reverse.three_prime_base,
         },
     }
+
+
+# -----------------------------------------------------------------------------
+# Batch Export Functions
+# -----------------------------------------------------------------------------
+
+
+def batch_to_dataframe(results: List[DesignResult]) -> pd.DataFrame:
+    """
+    Convert multiple DesignResults to a single DataFrame.
+
+    Args:
+        results: List of DesignResult objects
+
+    Returns:
+        Combined DataFrame with all primer pairs
+    """
+    all_dfs = [to_dataframe(result) for result in results if result.primer_pairs]
+    if not all_dfs:
+        return pd.DataFrame()
+    return pd.concat(all_dfs, ignore_index=True)
+
+
+def batch_to_summary_dataframe(results: List[DesignResult]) -> pd.DataFrame:
+    """
+    Convert multiple DesignResults to a summary DataFrame.
+
+    Shows only the top-ranked primer for each target.
+
+    Args:
+        results: List of DesignResult objects
+
+    Returns:
+        Summary DataFrame with best primer per target
+    """
+    rows = []
+    for result in results:
+        if result.primer_pairs:
+            pair = result.primer_pairs[0]  # Top-ranked
+            rows.append({
+                "Target": result.target_name,
+                "Seq_Length": len(result.target_sequence),
+                "Score": pair.composite_score,
+                "Forward": pair.forward.sequence,
+                "Fwd_Tm": f"{pair.forward.tm:.1f}°C",
+                "Reverse": pair.reverse.sequence,
+                "Rev_Tm": f"{pair.reverse.tm:.1f}°C",
+                "Product": f"{pair.product_size} bp",
+            })
+        else:
+            rows.append({
+                "Target": result.target_name,
+                "Seq_Length": len(result.target_sequence),
+                "Score": None,
+                "Forward": "No primers found",
+                "Fwd_Tm": "-",
+                "Reverse": "-",
+                "Rev_Tm": "-",
+                "Product": "-",
+            })
+    return pd.DataFrame(rows)
+
+
+def batch_export_csv_bytes(results: List[DesignResult]) -> bytes:
+    """
+    Export batch results to CSV as bytes (for Streamlit download).
+
+    Args:
+        results: List of DesignResult objects
+
+    Returns:
+        CSV as bytes
+    """
+    df = batch_to_dataframe(results)
+    return df.to_csv(index=False).encode("utf-8")

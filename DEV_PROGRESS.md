@@ -230,11 +230,11 @@
 - [ ] **4.1.3** Implement 5' base check (avoid G)
 - [ ] **4.1.4** Add probe to UI display
 
-### 4.2 Batch Processing
-- [ ] **4.2.1** Accept multi-sequence FASTA
-- [ ] **4.2.2** Process sequences in loop
-- [ ] **4.2.3** Aggregate results
-- [ ] **4.2.4** Batch export to single CSV
+### 4.2 Batch Processing ✅
+- [x] **4.2.1** Accept multi-sequence FASTA
+- [x] **4.2.2** Process sequences in loop
+- [x] **4.2.3** Aggregate results
+- [x] **4.2.4** Batch export to single CSV
 
 ### 4.3 Additional Visualizations
 - [ ] **4.3.1** Add Tm distribution plot

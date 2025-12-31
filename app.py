@@ -9,13 +9,18 @@ import streamlit as st
 import pandas as pd
 import yaml
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from src.sequence_parser import parse_fasta, validate_sequence, get_sequence_stats
 from src.primer_designer import design_primers, get_primer3_settings_from_thresholds
 from src.qc_analyzer import analyze_pair
 from src.scorer import score_pairs, rank_pairs, get_score_breakdown
-from src.exporter import to_summary_dataframe, export_csv_bytes
+from src.exporter import (
+    to_summary_dataframe,
+    export_csv_bytes,
+    batch_to_summary_dataframe,
+    batch_export_csv_bytes,
+)
 from src.models import QCThresholds, DesignResult, QCStatus, PrimerPair
 
 
@@ -352,7 +357,7 @@ def clear_for_new_design():
 # Sidebar - Input Panel
 # -----------------------------------------------------------------------------
 
-def render_sidebar() -> tuple[Optional[str], Optional[str], QCThresholds, int]:
+def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
     """Render the sidebar input panel."""
 
     with st.sidebar:
@@ -519,29 +524,31 @@ def render_sidebar() -> tuple[Optional[str], Optional[str], QCThresholds, int]:
             product_max=product_max,
         )
 
-        # Determine sequence source
-        sequence_text = None
-        sequence_name = None
+        # Determine sequence source - support multiple sequences
+        sequences: List[Tuple[str, str]] = []  # List of (sequence, name)
 
         if uploaded_file is not None:
             try:
                 file_content = uploaded_file.read().decode("utf-8")
                 records = parse_fasta(file_content)
-                if records:
-                    sequence_text = str(records[0].seq)
-                    sequence_name = records[0].id
+                for record in records:
+                    sequences.append((str(record.seq), record.id))
+                if len(records) > 1:
+                    st.info(f"📋 Batch mode: {len(records)} sequences detected")
             except Exception as e:
                 st.error(f"Error reading file: {str(e)}")
         elif raw_sequence.strip():
             try:
                 records = parse_fasta(raw_sequence)
-                if records:
-                    sequence_text = str(records[0].seq)
-                    sequence_name = records[0].id if records[0].id != "input_sequence" else "User Input"
+                for record in records:
+                    name = record.id if record.id != "input_sequence" else "User Input"
+                    sequences.append((str(record.seq), name))
+                if len(records) > 1:
+                    st.info(f"📋 Batch mode: {len(records)} sequences detected")
             except Exception as e:
                 st.error(f"Error parsing sequence: {str(e)}")
 
-        return sequence_text, sequence_name, thresholds, num_results, design_clicked
+        return sequences, thresholds, num_results, design_clicked
 
 
 # -----------------------------------------------------------------------------
@@ -958,105 +965,233 @@ def render_welcome_message():
 # Main Application
 # -----------------------------------------------------------------------------
 
+def design_primers_for_sequence(
+    sequence_text: str,
+    sequence_name: str,
+    thresholds: QCThresholds,
+    num_results: int,
+) -> Optional[DesignResult]:
+    """Design primers for a single sequence and return DesignResult."""
+    settings = get_primer3_settings_from_thresholds(thresholds)
+
+    pairs = design_primers(
+        sequence_text,
+        settings=settings,
+        num_return=num_results * 2,
+    )
+
+    if not pairs:
+        return DesignResult(
+            target_name=sequence_name,
+            target_sequence=sequence_text,
+            primer_pairs=[],
+        )
+
+    # Analyze pairs
+    for pair in pairs:
+        analyze_pair(pair)
+
+    # Score and rank
+    scored_pairs = score_pairs(pairs, thresholds)
+    ranked_pairs = rank_pairs(scored_pairs)
+
+    # Limit to requested number
+    final_pairs = ranked_pairs[:num_results]
+
+    return DesignResult(
+        target_name=sequence_name,
+        target_sequence=sequence_text,
+        primer_pairs=final_pairs,
+    )
+
+
+def render_batch_results(results: List[DesignResult], thresholds: QCThresholds):
+    """Render batch processing results."""
+    st.markdown("### 📋 Batch Results Summary")
+
+    # Summary stats
+    total = len(results)
+    successful = sum(1 for r in results if r.primer_pairs)
+    failed = total - successful
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Sequences", total)
+    with col2:
+        st.metric("Successful", successful, delta=None)
+    with col3:
+        st.metric("No Primers Found", failed, delta=None if failed == 0 else f"-{failed}")
+
+    # Summary table
+    st.markdown("#### Best Primer Per Target")
+    summary_df = batch_to_summary_dataframe(results)
+    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+    # Export button
+    st.markdown("---")
+    st.markdown("### Export Batch Results")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        csv_bytes = batch_export_csv_bytes(results)
+        st.download_button(
+            "📥 Download All Results (CSV)",
+            data=csv_bytes,
+            file_name="batch_primer_results.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    # Expandable details per sequence
+    st.markdown("---")
+    st.markdown("### Detailed Results by Target")
+
+    for i, result in enumerate(results):
+        with st.expander(f"**{result.target_name}** - {len(result.primer_pairs)} primer pairs"):
+            if result.primer_pairs:
+                summary_df = to_summary_dataframe(result)
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning("No primer pairs found for this sequence.")
+
+
 def main():
     """Main application entry point."""
 
     initialize_session_state()
 
     # Render sidebar and get inputs
-    sequence_text, sequence_name, thresholds, num_results, design_clicked = render_sidebar()
+    sequences, thresholds, num_results, design_clicked = render_sidebar()
 
     # Check for example sequence
     if st.session_state.get("example_loaded"):
         try:
             records = parse_fasta(st.session_state.example_seq)
             if records:
-                sequence_text = str(records[0].seq)
-                sequence_name = records[0].id
+                sequences = [(str(records[0].seq), records[0].id)]
         except Exception:
             pass
 
     # Render main content
     render_header()
 
-    if sequence_text is None:
+    if not sequences:
         render_welcome_message()
         return
 
-    # Validate sequence
-    is_valid, error_msg = validate_sequence(sequence_text)
+    # Determine mode: single vs batch
+    is_batch_mode = len(sequences) > 1
 
-    # Show sequence stats
-    render_sequence_stats(sequence_text, sequence_name or "Unknown", is_valid, error_msg)
+    if is_batch_mode:
+        # Batch mode: show summary of sequences
+        st.markdown("### 📋 Batch Input Summary")
+        st.write(f"**{len(sequences)} sequences** ready for primer design")
 
-    if not is_valid:
-        return
+        # Quick validation summary
+        valid_count = 0
+        for seq, name in sequences:
+            is_valid, _ = validate_sequence(seq)
+            if is_valid:
+                valid_count += 1
 
-    # Design primers when button clicked
-    if design_clicked:
-        with st.spinner("Designing primers..."):
-            try:
-                # Get Primer3 settings from thresholds
-                settings = get_primer3_settings_from_thresholds(thresholds)
+        if valid_count < len(sequences):
+            st.warning(f"{len(sequences) - valid_count} sequence(s) failed validation and will be skipped.")
 
-                # Design primers
-                pairs = design_primers(
-                    sequence_text,
-                    settings=settings,
-                    num_return=num_results * 2,  # Request extra to filter
-                )
+        # Design primers when button clicked
+        if design_clicked:
+            results = []
+            progress_bar = st.progress(0)
+            status_text = st.empty()
 
-                if not pairs:
-                    st.warning(
-                        "No primer pairs could be designed with the current parameters. "
-                        "Try relaxing the constraints (wider Tm range, larger product size range)."
+            for i, (seq_text, seq_name) in enumerate(sequences):
+                status_text.text(f"Processing {seq_name}... ({i+1}/{len(sequences)})")
+
+                is_valid, error_msg = validate_sequence(seq_text)
+                if not is_valid:
+                    # Create empty result for invalid sequences
+                    results.append(DesignResult(
+                        target_name=seq_name,
+                        target_sequence=seq_text,
+                        primer_pairs=[],
+                    ))
+                else:
+                    try:
+                        result = design_primers_for_sequence(
+                            seq_text, seq_name, thresholds, num_results
+                        )
+                        results.append(result)
+                    except Exception as e:
+                        st.warning(f"Error processing {seq_name}: {str(e)}")
+                        results.append(DesignResult(
+                            target_name=seq_name,
+                            target_sequence=seq_text,
+                            primer_pairs=[],
+                        ))
+
+                progress_bar.progress((i + 1) / len(sequences))
+
+            status_text.text("✅ Batch processing complete!")
+            st.session_state.batch_results = results
+
+        # Display batch results if available
+        if st.session_state.get("batch_results"):
+            st.markdown("---")
+            render_batch_results(st.session_state.batch_results, thresholds)
+
+    else:
+        # Single sequence mode (original behavior)
+        sequence_text, sequence_name = sequences[0]
+
+        # Validate sequence
+        is_valid, error_msg = validate_sequence(sequence_text)
+
+        # Show sequence stats
+        render_sequence_stats(sequence_text, sequence_name or "Unknown", is_valid, error_msg)
+
+        if not is_valid:
+            return
+
+        # Design primers when button clicked
+        if design_clicked:
+            with st.spinner("Designing primers..."):
+                try:
+                    result = design_primers_for_sequence(
+                        sequence_text, sequence_name, thresholds, num_results
                     )
+
+                    if not result.primer_pairs:
+                        st.warning(
+                            "No primer pairs could be designed with the current parameters. "
+                            "Try relaxing the constraints (wider Tm range, larger product size range)."
+                        )
+                        return
+
+                    st.session_state.design_result = result
+
+                except Exception as e:
+                    st.error(f"Error during primer design: {str(e)}")
                     return
 
-                # Analyze pairs
-                for pair in pairs:
-                    analyze_pair(pair)
-
-                # Score and rank
-                scored_pairs = score_pairs(pairs, thresholds)
-                ranked_pairs = rank_pairs(scored_pairs)
-
-                # Limit to requested number
-                final_pairs = ranked_pairs[:num_results]
-
-                # Create result object
-                result = DesignResult(
-                    target_name=sequence_name or "input_sequence",
-                    target_sequence=sequence_text,
-                    primer_pairs=final_pairs,
-                )
-
-                st.session_state.design_result = result
-
-            except Exception as e:
-                st.error(f"Error during primer design: {str(e)}")
-                return
-
-    # Display results if available
-    if st.session_state.design_result is not None:
-        result = st.session_state.design_result
-
-        st.markdown("---")
-
-        # Results table with selection
-        selected_idx = render_results_table(result, thresholds)
-
-        if selected_idx is not None and result.primer_pairs:
-            st.markdown("---")
-
-            # Detailed pair view
-            selected_pair = result.primer_pairs[selected_idx]
-            render_pair_details(selected_pair, thresholds)
+        # Display results if available
+        if st.session_state.design_result is not None:
+            result = st.session_state.design_result
 
             st.markdown("---")
 
-            # Export section
-            render_export_section(result)
+            # Results table with selection
+            selected_idx = render_results_table(result, thresholds)
+
+            if selected_idx is not None and result.primer_pairs:
+                st.markdown("---")
+
+                # Detailed pair view
+                selected_pair = result.primer_pairs[selected_idx]
+                render_pair_details(selected_pair, thresholds)
+
+                st.markdown("---")
+
+                # Export section
+                render_export_section(result)
 
 
 if __name__ == "__main__":
