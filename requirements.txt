@@ -1,0 +1,24 @@
+# Primer Design Automation Pipeline
+# Python 3.11+
+
+# Web UI
+streamlit>=1.28.0
+
+# Primer Design Engine
+primer3-py>=2.0.0
+
+# Sequence Handling
+biopython>=1.81
+
+# Data Processing
+pandas>=2.0.0
+
+# Visualization
+plotly>=5.18.0
+
+# Configuration
+pyyaml>=6.0.1
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0

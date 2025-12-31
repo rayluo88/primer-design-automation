@@ -1,0 +1,64 @@
+# Primer Design Automation - Default Configuration
+
+# Primer Melting Temperature (Tm)
+tm:
+  optimal: 60.0
+  min: 58.0
+  max: 62.0
+  warn_min: 55.0
+  warn_max: 65.0
+  diff_max: 2.0      # Max difference between F and R primers
+  diff_warn: 4.0
+
+# GC Content (%)
+gc:
+  optimal: 50.0
+  min: 40.0
+  max: 60.0
+  warn_min: 30.0
+  warn_max: 70.0
+
+# Primer Length (bp)
+length:
+  optimal: 20
+  min: 18
+  max: 25
+
+# Secondary Structures (ΔG in kcal/mol, more negative = worse)
+structures:
+  hairpin_dg_max: -2.0
+  self_dimer_dg_max: -9.0
+  cross_dimer_dg_max: -9.0
+
+# 3' End Preferences
+three_prime:
+  preferred: ["G", "C"]
+  avoid: ["T"]
+
+# Product Size (bp) - optimized for qPCR
+product:
+  optimal: 100
+  min: 70
+  max: 200
+
+# Primer3 Settings
+primer3:
+  num_return: 10
+  max_poly_x: 4
+  max_self_any: 8
+  max_self_end: 3
+  pair_max_compl_any: 8
+  pair_max_compl_end: 3
+
+# Scoring Weights (must sum to 100)
+scoring:
+  tm_weight: 25
+  gc_weight: 15
+  structure_weight: 30
+  three_prime_weight: 20
+  product_weight: 10
+
+# UI Settings
+ui:
+  default_num_results: 5
+  max_sequence_display: 500
