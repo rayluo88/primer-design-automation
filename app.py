@@ -396,7 +396,6 @@ def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
                 "Min Tm",
                 min_value=50.0,
                 max_value=65.0,
-                value=st.session_state.get("tm_min", 58.0),
                 step=0.5,
                 key="tm_min",
                 help="Minimum acceptable Tm for primers",
@@ -406,7 +405,6 @@ def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
                 "Max Tm",
                 min_value=55.0,
                 max_value=70.0,
-                value=st.session_state.get("tm_max", 62.0),
                 step=0.5,
                 key="tm_max",
                 help="Maximum acceptable Tm for primers",
@@ -416,7 +414,6 @@ def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
             "Optimal Tm",
             min_value=tm_min,
             max_value=tm_max,
-            value=min(max(st.session_state.get("tm_optimal", 60.0), tm_min), tm_max),
             step=0.5,
             key="tm_optimal",
             help="Target optimal Tm for primer design",
@@ -433,7 +430,6 @@ def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
                 "Min GC%",
                 min_value=20.0,
                 max_value=60.0,
-                value=st.session_state.get("gc_min", 40.0),
                 step=1.0,
                 key="gc_min",
                 help="Minimum acceptable GC content",
@@ -443,7 +439,6 @@ def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
                 "Max GC%",
                 min_value=40.0,
                 max_value=80.0,
-                value=st.session_state.get("gc_max", 60.0),
                 step=1.0,
                 key="gc_max",
                 help="Maximum acceptable GC content",
@@ -460,7 +455,6 @@ def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
                 "Min Size",
                 min_value=50,
                 max_value=150,
-                value=st.session_state.get("product_min", 70),
                 step=5,
                 key="product_min",
                 help="Minimum amplicon size",
@@ -470,7 +464,6 @@ def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
                 "Max Size",
                 min_value=100,
                 max_value=500,
-                value=st.session_state.get("product_max", 200),
                 step=10,
                 key="product_max",
                 help="Maximum amplicon size",
@@ -483,7 +476,6 @@ def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
             "Number of primer pairs",
             min_value=1,
             max_value=20,
-            value=st.session_state.get("num_results", 5),
             key="num_results",
             help="Number of top-ranked primer pairs to return",
         )
@@ -494,21 +486,21 @@ def render_sidebar() -> tuple[List[Tuple[str, str]], QCThresholds, int, bool]:
         design_clicked = st.button(
             "🧬 Design Primers",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
 
         col1, col2 = st.columns(2)
         with col1:
             st.button(
                 "🔄 New Design",
-                use_container_width=True,
+                width="stretch",
                 on_click=clear_for_new_design,
                 help="Clear sequence and start fresh",
             )
         with col2:
             st.button(
                 "↩️ Reset Params",
-                use_container_width=True,
+                width="stretch",
                 on_click=reset_parameters,
                 help="Reset parameters to defaults",
             )
@@ -690,16 +682,16 @@ def render_results_table(result: DesignResult, thresholds: QCThresholds):
         else:
             return "background-color: #fee2e2; color: #dc2626; font-weight: 600"
 
-    styled_df = df.style.applymap(
+    styled_df = df.style.map(
         color_status, subset=["Status"]
-    ).applymap(
+    ).map(
         color_score, subset=["Score"]
     )
 
     # Row selection
     st.dataframe(
         styled_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -918,7 +910,7 @@ def render_export_section(result: DesignResult):
             data=csv_bytes,
             file_name=f"primer_design_{result.target_name}.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
 
     with col2:
@@ -1025,7 +1017,7 @@ def render_batch_results(results: List[DesignResult], thresholds: QCThresholds):
     # Summary table
     st.markdown("#### Best Primer Per Target")
     summary_df = batch_to_summary_dataframe(results)
-    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+    st.dataframe(summary_df, width="stretch", hide_index=True)
 
     # Export button
     st.markdown("---")
@@ -1039,7 +1031,7 @@ def render_batch_results(results: List[DesignResult], thresholds: QCThresholds):
             data=csv_bytes,
             file_name="batch_primer_results.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
 
     # Expandable details per sequence
@@ -1050,7 +1042,7 @@ def render_batch_results(results: List[DesignResult], thresholds: QCThresholds):
         with st.expander(f"**{result.target_name}** - {len(result.primer_pairs)} primer pairs"):
             if result.primer_pairs:
                 summary_df = to_summary_dataframe(result)
-                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                st.dataframe(summary_df, width="stretch", hide_index=True)
             else:
                 st.warning("No primer pairs found for this sequence.")
 
@@ -1063,14 +1055,17 @@ def main():
     # Render sidebar and get inputs
     sequences, thresholds, num_results, design_clicked = render_sidebar()
 
-    # Check for example sequence
-    if st.session_state.get("example_loaded"):
+    # Check for example sequence (only if no file/text input)
+    if not sequences and st.session_state.get("example_loaded"):
         try:
             records = parse_fasta(st.session_state.example_seq)
             if records:
                 sequences = [(str(records[0].seq), records[0].id)]
         except Exception:
             pass
+    elif sequences:
+        # Clear example flag when user provides new input
+        st.session_state.example_loaded = False
 
     # Render main content
     render_header()
