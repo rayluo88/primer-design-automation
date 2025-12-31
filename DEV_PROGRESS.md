@@ -39,7 +39,7 @@
   - streamlit, primer3-py, biopython, pandas, plotly, pytest, pyyaml
 - [x] **1.1.3** Create virtual environment and install dependencies
 - [x] **1.1.4** Create `src/__init__.py`
-- [ ] **1.1.5** Initialize git repository
+- [x] **1.1.5** Initialize git repository
 
 ### 1.2 Data Models (`src/models.py`) ✅
 - [x] **1.2.1** Define `QCStatus` enum (PASS, WARN, FAIL)
@@ -177,26 +177,26 @@
 - [x] **3.2.4** Add info tooltips for QC metrics
 - [x] **3.2.5** Add error handling with user-friendly messages
 
-### 3.3 Unit Tests (`tests/`)
-- [ ] **3.3.1** Create `test_sequence_parser.py`
+### 3.3 Unit Tests (`tests/`) ✅
+- [x] **3.3.1** Create `test_sequence_parser.py`
   - Test valid FASTA parsing
   - Test invalid nucleotide detection
-- [ ] **3.3.2** Create `test_primer_designer.py`
+- [x] **3.3.2** Create `test_primer_designer.py`
   - Test primer generation on known sequence
   - Test edge cases (too short, no results)
-- [ ] **3.3.3** Create `test_qc_analyzer.py`
+- [x] **3.3.3** Create `test_qc_analyzer.py`
   - Test Tm calculation (compare to known values)
   - Test GC calculation
   - Test ΔG calculations
-- [ ] **3.3.4** Create `test_scorer.py`
+- [x] **3.3.4** Create `test_scorer.py`
   - Test perfect primer pair → high score
   - Test problematic pair → low score
-- [ ] **3.3.5** Run all tests, ensure passing
+- [x] **3.3.5** Run all tests, ensure passing (87 tests)
 
 ### 3.4 Sample Data ✅
 - [x] **3.4.1** Create `data/sample_sequences/sars_cov2_spike.fasta`
 - [x] **3.4.2** Create `data/sample_sequences/hiv_pol.fasta`
-- [ ] **3.4.3** Validate samples work end-to-end
+- [x] **3.4.3** Validate samples work end-to-end (scripts/validate_samples.py)
 
 ### 3.5 Documentation ✅
 - [x] **3.5.1** Update README.md with:
@@ -212,11 +212,11 @@
 - [ ] **3.6.2** Load config on app startup
 
 ### 3.7 Phase 3 Verification
-- [ ] **3.7.1** All unit tests pass
-- [ ] **3.7.2** Sample sequences produce expected results
-- [ ] **3.7.3** UI is polished and professional
-- [ ] **3.7.4** README is complete and accurate
-- [ ] **3.7.5** App is demo-ready
+- [x] **3.7.1** All unit tests pass (87 tests)
+- [x] **3.7.2** Sample sequences produce expected results
+- [x] **3.7.3** UI is polished and professional
+- [x] **3.7.4** README is complete and accurate
+- [x] **3.7.5** App is demo-ready
 
 ---
 
@@ -319,8 +319,8 @@ graph TD
 - [x] Results displayed in ranked table
 - [x] User can see detailed QC breakdown
 - [x] User can export results to CSV
-- [ ] Unit tests pass
-- [ ] Demo-ready for technical interview
+- [x] Unit tests pass (87 tests)
+- [x] Demo-ready for technical interview
 
 ### Extended (Phases 4-5)
 - [ ] TaqMan probe design works
