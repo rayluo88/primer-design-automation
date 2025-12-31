@@ -7,6 +7,8 @@ comprehensive QC analysis and scoring.
 
 import streamlit as st
 import pandas as pd
+import yaml
+from pathlib import Path
 from typing import Optional
 
 from src.sequence_parser import parse_fasta, validate_sequence, get_sequence_stats
@@ -249,26 +251,72 @@ def format_dg(value: float) -> str:
     return f"{value:.1f} kcal/mol"
 
 
+# -----------------------------------------------------------------------------
+# Configuration Loading
+# -----------------------------------------------------------------------------
+
+CONFIG_PATH = Path(__file__).parent / "config" / "defaults.yaml"
+
+
+@st.cache_data
+def load_config() -> dict:
+    """Load configuration from YAML file. Falls back to defaults if not found."""
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH) as f:
+            return yaml.safe_load(f)
+    return {}
+
+
+def get_default_thresholds() -> QCThresholds:
+    """Create QCThresholds from config file."""
+    config = load_config()
+    if not config:
+        return QCThresholds()
+
+    return QCThresholds(
+        tm_min=config.get("tm", {}).get("min", 58.0),
+        tm_optimal=config.get("tm", {}).get("optimal", 60.0),
+        tm_max=config.get("tm", {}).get("max", 62.0),
+        tm_diff_warn=config.get("tm", {}).get("diff_warn", 4.0),
+        gc_min=config.get("gc", {}).get("min", 40.0),
+        gc_optimal=config.get("gc", {}).get("optimal", 50.0),
+        gc_max=config.get("gc", {}).get("max", 60.0),
+        product_min=config.get("product", {}).get("min", 70),
+        product_optimal=config.get("product", {}).get("optimal", 100),
+        product_max=config.get("product", {}).get("max", 200),
+        hairpin_dg_max=config.get("structures", {}).get("hairpin_dg_max", -2.0),
+        self_dimer_dg_max=config.get("structures", {}).get("self_dimer_dg_max", -9.0),
+        cross_dimer_dg_max=config.get("structures", {}).get("cross_dimer_dg_max", -9.0),
+    )
+
+
+def get_default_parameter_values() -> dict:
+    """Get default parameter values from config."""
+    config = load_config()
+    thresholds = get_default_thresholds()
+
+    return {
+        "tm_min": thresholds.tm_min,
+        "tm_optimal": thresholds.tm_optimal,
+        "tm_max": thresholds.tm_max,
+        "gc_min": thresholds.gc_min,
+        "gc_max": thresholds.gc_max,
+        "product_min": thresholds.product_min,
+        "product_max": thresholds.product_max,
+        "num_results": config.get("ui", {}).get("default_num_results", 5),
+    }
+
+
+# Load defaults on module import
+DEFAULT_THRESHOLDS = get_default_thresholds()
+DEFAULT_PARAMETER_VALUES = get_default_parameter_values()
+
+
 def initialize_session_state():
     """Initialize session state variables."""
-    # Handle reset flag FIRST (must happen before any other initialization)
-    if st.session_state.get("_reset_requested", False):
-        st.session_state._reset_requested = False
-        st.session_state._do_reset = True
-        st.rerun()
-
-    # Perform the actual reset on the fresh run
-    if st.session_state.get("_do_reset", False):
-        st.session_state._do_reset = False
-        # Delete all widget keys so they reinitialize with defaults
-        for key in ["tm_min", "tm_optimal", "tm_max", "gc_min", "gc_max",
-                    "product_min", "product_max", "num_results"]:
-            if key in st.session_state:
-                del st.session_state[key]
-        # Clear any derived state so the UI and results fully reset
-        st.session_state.design_result = None
-        st.session_state.selected_pair_idx = 0
-        st.session_state.thresholds = QCThresholds()
+    for key, value in DEFAULT_PARAMETER_VALUES.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
     if "design_result" not in st.session_state:
         st.session_state.design_result = None
@@ -280,17 +328,21 @@ def initialize_session_state():
         st.session_state.thresholds = QCThresholds()
 
 
-def request_reset():
-    """Callback to request parameter reset (called by Reset button)."""
-    st.session_state._reset_requested = True
+def reset_parameters():
+    """Reset design parameters to defaults (called by Reset button)."""
+    for key, value in DEFAULT_PARAMETER_VALUES.items():
+        st.session_state[key] = value
+    st.session_state.design_result = None
+    st.session_state.selected_pair_idx = 0
+    st.session_state.thresholds = QCThresholds()
 
 
 def clear_for_new_design():
     """Clear sequence inputs and results for a new design session."""
     # Clear file uploader by incrementing its key suffix
     st.session_state._file_uploader_key = st.session_state.get("_file_uploader_key", 0) + 1
-    # Clear text area
-    st.session_state.raw_sequence_input = ""
+    # Clear text area by incrementing its key suffix (same pattern as file uploader)
+    st.session_state._text_area_key = st.session_state.get("_text_area_key", 0) + 1
     # Clear design results
     st.session_state.design_result = None
     st.session_state.selected_pair_idx = 0
@@ -304,12 +356,6 @@ def render_sidebar() -> tuple[Optional[str], Optional[str], QCThresholds, int]:
     """Render the sidebar input panel."""
 
     with st.sidebar:
-        # New Design button at top
-        if st.button("🔄 New Design", use_container_width=True, help="Clear current sequence and start fresh"):
-            clear_for_new_design()
-            st.rerun()
-
-        st.markdown("---")
         st.markdown("### Input Sequence")
 
         # FASTA file uploader (key changes when cleared)
@@ -323,13 +369,14 @@ def render_sidebar() -> tuple[Optional[str], Optional[str], QCThresholds, int]:
 
         st.markdown("**OR**")
 
-        # Raw sequence text area (with key for clearing)
+        # Raw sequence text area (dynamic key for clearing)
+        text_key = f"raw_sequence_input_{st.session_state.get('_text_area_key', 0)}"
         raw_sequence = st.text_area(
             "Paste sequence",
             height=120,
             placeholder="ATGCGATCGATCGATCG...",
             help="Paste a raw nucleotide sequence or FASTA-formatted text",
-            key="raw_sequence_input",
+            key=text_key,
         )
 
         st.markdown("---")
@@ -439,18 +486,26 @@ def render_sidebar() -> tuple[Optional[str], Optional[str], QCThresholds, int]:
         st.markdown("---")
 
         # Action buttons
-        col1, col2 = st.columns([2, 1])
+        design_clicked = st.button(
+            "🧬 Design Primers",
+            type="primary",
+            use_container_width=True,
+        )
+
+        col1, col2 = st.columns(2)
         with col1:
-            design_clicked = st.button(
-                "Design Primers",
-                type="primary",
+            st.button(
+                "🔄 New Design",
                 use_container_width=True,
+                on_click=clear_for_new_design,
+                help="Clear sequence and start fresh",
             )
         with col2:
             st.button(
-                "Reset",
+                "↩️ Reset Params",
                 use_container_width=True,
-                on_click=request_reset,
+                on_click=reset_parameters,
+                help="Reset parameters to defaults",
             )
 
         # Build thresholds object

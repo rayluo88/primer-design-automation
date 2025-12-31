@@ -209,7 +209,7 @@
 
 ### 3.6 Default Config (`config/defaults.yaml`) ✅
 - [x] **3.6.1** Create defaults.yaml with all thresholds
-- [ ] **3.6.2** Load config on app startup
+- [x] **3.6.2** Load config on app startup
 
 ### 3.7 Phase 3 Verification
 - [x] **3.7.1** All unit tests pass (87 tests)
