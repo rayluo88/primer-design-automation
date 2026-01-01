@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from src.sequence_parser import parse_fasta, validate_sequence, get_sequence_stats
-from src.primer_designer import design_primers, get_primer3_settings_from_thresholds
+from src.primer_designer import design_primers, get_primer3_settings_from_thresholds, design_probes_for_pairs
 from src.qc_analyzer import analyze_pair
 from src.scorer import score_pairs, rank_pairs, get_score_breakdown
 from src.exporter import (
@@ -653,12 +653,16 @@ def render_results_table(result: DesignResult, thresholds: QCThresholds):
             overall = "PASS"
             status_color = "#059669"
 
+        # Probe Tm display
+        probe_tm = f"{pair.probe.tm:.1f}°C" if pair.probe else "—"
+
         rows.append({
             "Rank": pair.rank,
             "Score": pair.composite_score,
             "Fwd Tm": f"{pair.forward.tm:.1f}°C",
             "Rev Tm": f"{pair.reverse.tm:.1f}°C",
             "ΔTm": f"{pair.tm_difference:.1f}°C",
+            "Probe Tm": probe_tm,
             "Product": f"{pair.product_size} bp",
             "Status": overall,
         })
@@ -761,12 +765,32 @@ def render_pair_details(pair: PrimerPair, thresholds: QCThresholds):
         st.markdown(f'<div class="primer-seq">5\' - {pair.reverse.sequence} - 3\'</div>', unsafe_allow_html=True)
         st.caption(f"Length: {pair.reverse.length} bp | Position: {pair.reverse.start}-{pair.reverse.end}")
 
+    # TaqMan Probe display (if available)
+    if pair.probe:
+        st.markdown("")
+        st.markdown("**🔬 TaqMan Probe**")
+        st.markdown(
+            f'<div class="primer-seq" style="background-color: #fef3c7; border-color: #fcd34d;">'
+            f"5' - {pair.probe.sequence} - 3'</div>",
+            unsafe_allow_html=True
+        )
+        tm_delta = pair.probe.tm - pair.primer_avg_tm
+        st.caption(
+            f"Length: {pair.probe.length} bp | Position: {pair.probe.start}-{pair.probe.end} | "
+            f"Tm: {pair.probe.tm:.1f}°C (+{tm_delta:.1f}°C vs primers)"
+        )
+
     st.markdown("---")
 
     # QC Metrics breakdown
     st.markdown("### QC Metrics")
 
-    col1, col2 = st.columns(2)
+    # Dynamic columns based on probe availability
+    if pair.probe:
+        col1, col2, col3 = st.columns(3)
+    else:
+        col1, col2 = st.columns(2)
+        col3 = None
 
     with col1:
         st.markdown("**Forward Primer QC**")
@@ -813,6 +837,33 @@ def render_pair_details(pair: PrimerPair, thresholds: QCThresholds):
                 f'<span style="font-weight: 500;">{value}</span></span></div>',
                 unsafe_allow_html=True
             )
+
+    # Probe QC column (if probe exists)
+    if col3 is not None and pair.probe:
+        with col3:
+            st.markdown("**🔬 Probe QC**")
+
+            tm_delta = pair.probe.tm - pair.primer_avg_tm
+            tm_delta_status = pair.probe.tm_delta_status(pair.primer_avg_tm)
+
+            metrics_probe = [
+                ("Tm Delta", f"+{tm_delta:.1f}°C", tm_delta_status, "Should be +8-10°C above primer avg"),
+                ("GC Content", f"{pair.probe.gc_percent:.1f}%", pair.probe.gc_status, "Optimal: 40-60%"),
+                ("5' Terminal Base", pair.probe.five_prime_base, pair.probe.five_prime_status, "Avoid G (quenches FAM)"),
+                ("Length", f"{pair.probe.length} bp", QCStatus.PASS, "Typical: 20-30 bp"),
+            ]
+
+            for name, value, status, tooltip in metrics_probe:
+                color = get_status_color(status)
+                icon = get_status_icon(status)
+                st.markdown(
+                    f'<div style="display: flex; justify-content: space-between; padding: 0.4rem 0; '
+                    f'border-bottom: 1px solid #f1f5f9;">'
+                    f'<span style="color: #475569;" title="{tooltip}">{name}</span>'
+                    f'<span><span style="color: {color}; margin-right: 0.5rem;">{icon}</span>'
+                    f'<span style="font-weight: 500;">{value}</span></span></div>',
+                    unsafe_allow_html=True
+                )
 
     st.markdown("---")
 
@@ -982,6 +1033,9 @@ def design_primers_for_sequence(
     # Analyze pairs
     for pair in pairs:
         analyze_pair(pair)
+
+    # Design TaqMan probes for each pair
+    pairs = design_probes_for_pairs(sequence_text, pairs)
 
     # Score and rank
     scored_pairs = score_pairs(pairs, thresholds)

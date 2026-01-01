@@ -8,7 +8,7 @@ from typing import Tuple
 
 import primer3
 
-from .models import Primer, PrimerPair
+from .models import Primer, PrimerPair, Probe
 
 
 def calculate_tm(sequence: str, mv_conc: float = 50.0, dv_conc: float = 1.5, dntp_conc: float = 0.2, dna_conc: float = 250.0) -> float:
@@ -181,7 +181,37 @@ def analyze_pair(pair: PrimerPair) -> PrimerPair:
     pair.tm_difference = abs(pair.forward.tm - pair.reverse.tm)
     pair.cross_dimer_dg = calculate_cross_dimer_dg(pair.forward.sequence, pair.reverse.sequence)
 
+    # Analyze probe if present
+    if pair.probe:
+        analyze_probe(pair.probe)
+
     return pair
+
+
+def analyze_probe(probe: Probe) -> Probe:
+    """
+    Calculate QC metrics for a TaqMan probe.
+
+    Args:
+        probe: Probe object with sequence
+
+    Returns:
+        Probe object with populated QC fields
+    """
+    if not probe or not probe.sequence:
+        return probe
+
+    # Recalculate Tm and GC if needed
+    if probe.tm == 0:
+        probe.tm = calculate_tm(probe.sequence)
+    if probe.gc_percent == 0:
+        probe.gc_percent = calculate_gc(probe.sequence)
+
+    # Set 5' base if not already set
+    if not probe.five_prime_base:
+        probe.five_prime_base = probe.sequence[0].upper()
+
+    return probe
 
 
 def get_3prime_end(sequence: str, length: int = 5) -> str:

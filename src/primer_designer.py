@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 import primer3
 
-from .models import Primer, PrimerPair, QCThresholds
+from .models import Primer, PrimerPair, Probe, QCThresholds
 
 
 # Default Primer3 settings optimized for qPCR
@@ -187,3 +187,164 @@ def get_primer3_settings_from_thresholds(thresholds: QCThresholds) -> Dict[str, 
         "PRIMER_MAX_GC": thresholds.gc_max,
         "PRIMER_PRODUCT_SIZE_RANGE": [[thresholds.product_min, thresholds.product_max]],
     }
+
+
+# -----------------------------------------------------------------------------
+# TaqMan Probe Design
+# -----------------------------------------------------------------------------
+
+def design_probe(
+    sequence: str,
+    pair: PrimerPair,
+    min_length: int = 20,
+    max_length: int = 30,
+    target_tm_delta: float = 9.0,
+) -> Optional[Probe]:
+    """
+    Design a TaqMan probe for a primer pair.
+
+    The probe should:
+    - Be positioned between forward and reverse primers
+    - Have Tm 8-10°C higher than primer average
+    - Preferably not start with G (quenches FAM)
+    - Have GC content 40-60%
+
+    Args:
+        sequence: Full target sequence
+        pair: PrimerPair containing forward and reverse primers
+        min_length: Minimum probe length (default 20)
+        max_length: Maximum probe length (default 30)
+        target_tm_delta: Target Tm above primer average (default 9°C)
+
+    Returns:
+        Best Probe candidate, or None if no suitable probe found
+    """
+    # Define the probe search region (between primers, with margin)
+    fwd_end = pair.forward.end
+    rev_start = pair.reverse.start
+
+    # Ensure there's room for a probe
+    if rev_start - fwd_end < min_length + 4:
+        return None
+
+    # Search region with small margins
+    search_start = fwd_end + 2
+    search_end = rev_start - 2
+
+    target_tm = pair.primer_avg_tm + target_tm_delta
+    candidates: List[tuple] = []  # (score, probe)
+
+    # Try different probe lengths and positions
+    for length in range(min_length, min(max_length + 1, search_end - search_start + 1)):
+        for start in range(search_start, search_end - length + 1):
+            probe_seq = sequence[start:start + length].upper()
+
+            # Skip if contains N
+            if "N" in probe_seq:
+                continue
+
+            # Calculate Tm using Primer3
+            try:
+                tm = primer3.calc_tm(probe_seq)
+            except Exception:
+                continue
+
+            # Calculate GC content
+            gc_count = probe_seq.count("G") + probe_seq.count("C")
+            gc_percent = (gc_count / length) * 100
+
+            # Score the probe candidate
+            score = _score_probe_candidate(
+                tm=tm,
+                gc_percent=gc_percent,
+                five_prime_base=probe_seq[0],
+                target_tm=target_tm,
+            )
+
+            probe = Probe(
+                sequence=probe_seq,
+                start=start,
+                end=start + length,
+                length=length,
+                tm=tm,
+                gc_percent=gc_percent,
+            )
+
+            candidates.append((score, probe))
+
+    if not candidates:
+        return None
+
+    # Return the best probe (highest score)
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
+
+
+def _score_probe_candidate(
+    tm: float,
+    gc_percent: float,
+    five_prime_base: str,
+    target_tm: float,
+) -> float:
+    """
+    Score a probe candidate (higher = better).
+
+    Args:
+        tm: Probe melting temperature
+        gc_percent: GC content percentage
+        five_prime_base: First base of probe
+        target_tm: Target Tm (primer avg + 8-10°C)
+
+    Returns:
+        Score value (0-100)
+    """
+    score = 50.0  # Base score
+
+    # Tm scoring (target is primer_avg + 8-10°C)
+    tm_diff = abs(tm - target_tm)
+    if tm_diff <= 1.0:
+        score += 25
+    elif tm_diff <= 2.0:
+        score += 15
+    elif tm_diff <= 4.0:
+        score += 5
+    else:
+        score -= 10
+
+    # GC scoring (optimal 45-55%)
+    gc_optimal = 50.0
+    gc_diff = abs(gc_percent - gc_optimal)
+    if gc_diff <= 5:
+        score += 15
+    elif gc_diff <= 10:
+        score += 10
+    elif gc_diff <= 15:
+        score += 5
+
+    # 5' base scoring (avoid G)
+    if five_prime_base == "G":
+        score -= 20  # Penalize G at 5' end
+    elif five_prime_base in ("A", "C"):
+        score += 10  # Prefer A or C
+
+    return score
+
+
+def design_probes_for_pairs(
+    sequence: str,
+    pairs: List[PrimerPair],
+) -> List[PrimerPair]:
+    """
+    Design probes for all primer pairs.
+
+    Args:
+        sequence: Full target sequence
+        pairs: List of PrimerPair objects
+
+    Returns:
+        Same list with probe field populated where possible
+    """
+    for pair in pairs:
+        probe = design_probe(sequence, pair)
+        pair.probe = probe
+    return pairs

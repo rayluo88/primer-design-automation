@@ -48,6 +48,12 @@ def to_dataframe(result: DesignResult) -> pd.DataFrame:
             "Product_Size": pair.product_size,
             "Tm_Difference": pair.tm_difference,
             "CrossDimer_dG": pair.cross_dimer_dg,
+            "Probe_Seq": pair.probe.sequence if pair.probe else "",
+            "Probe_Tm": pair.probe.tm if pair.probe else None,
+            "Probe_GC%": pair.probe.gc_percent if pair.probe else None,
+            "Probe_5prime": pair.probe.five_prime_base if pair.probe else "",
+            "Probe_Start": pair.probe.start if pair.probe else None,
+            "Probe_End": pair.probe.end if pair.probe else None,
             "Target": result.target_name,
         }
         rows.append(row)
@@ -79,6 +85,7 @@ def to_summary_dataframe(result: DesignResult) -> pd.DataFrame:
             "Rev_GC": f"{pair.reverse.gc_percent:.1f}%",
             "Product": f"{pair.product_size} bp",
             "ΔTm": f"{pair.tm_difference:.1f}°C",
+            "Probe_Tm": f"{pair.probe.tm:.1f}°C" if pair.probe else "—",
         }
         rows.append(row)
 
@@ -197,6 +204,15 @@ def pair_to_dict(pair: PrimerPair) -> Dict[str, Any]:
             "self_dimer_dg": pair.reverse.self_dimer_dg,
             "three_prime_base": pair.reverse.three_prime_base,
         },
+        "probe": {
+            "sequence": pair.probe.sequence,
+            "start": pair.probe.start,
+            "end": pair.probe.end,
+            "length": pair.probe.length,
+            "tm": pair.probe.tm,
+            "gc_percent": pair.probe.gc_percent,
+            "five_prime_base": pair.probe.five_prime_base,
+        } if pair.probe else None,
     }
 
 
@@ -245,6 +261,7 @@ def batch_to_summary_dataframe(results: List[DesignResult]) -> pd.DataFrame:
                 "Fwd_Tm": f"{pair.forward.tm:.1f}°C",
                 "Reverse": pair.reverse.sequence,
                 "Rev_Tm": f"{pair.reverse.tm:.1f}°C",
+                "Probe_Tm": f"{pair.probe.tm:.1f}°C" if pair.probe else "—",
                 "Product": f"{pair.product_size} bp",
             })
         else:
@@ -256,6 +273,7 @@ def batch_to_summary_dataframe(results: List[DesignResult]) -> pd.DataFrame:
                 "Fwd_Tm": "-",
                 "Reverse": "-",
                 "Rev_Tm": "-",
+                "Probe_Tm": "-",
                 "Product": "-",
             })
     return pd.DataFrame(rows)

@@ -89,10 +89,16 @@ class PrimerPair:
     cross_dimer_dg: float = 0.0
     composite_score: float = 0.0
     rank: int = 0
+    probe: Optional["Probe"] = None
 
     def __post_init__(self):
         if self.tm_difference == 0.0:
             self.tm_difference = abs(self.forward.tm - self.reverse.tm)
+
+    @property
+    def primer_avg_tm(self) -> float:
+        """Average Tm of forward and reverse primers."""
+        return (self.forward.tm + self.reverse.tm) / 2
 
     @property
     def tm_match_status(self) -> QCStatus:
@@ -124,7 +130,7 @@ class PrimerPair:
 
 @dataclass
 class Probe:
-    """TaqMan probe (optional, for extended features)."""
+    """TaqMan probe for real-time qPCR detection."""
     sequence: str
     start: int
     end: int
@@ -139,10 +145,28 @@ class Probe:
 
     @property
     def five_prime_status(self) -> QCStatus:
-        """5' should not start with G (quenches reporter)."""
+        """5' should not start with G (quenches FAM reporter)."""
         if self.five_prime_base == "G":
             return QCStatus.FAIL
         return QCStatus.PASS
+
+    @property
+    def gc_status(self) -> QCStatus:
+        """Evaluate GC% against standard thresholds (40-60%)."""
+        if 40.0 <= self.gc_percent <= 60.0:
+            return QCStatus.PASS
+        elif 30.0 <= self.gc_percent <= 70.0:
+            return QCStatus.WARN
+        return QCStatus.FAIL
+
+    def tm_delta_status(self, primer_avg_tm: float) -> QCStatus:
+        """Evaluate Tm relative to primer average (should be 8-10°C higher)."""
+        delta = self.tm - primer_avg_tm
+        if 8.0 <= delta <= 10.0:
+            return QCStatus.PASS
+        elif 6.0 <= delta <= 12.0:
+            return QCStatus.WARN
+        return QCStatus.FAIL
 
 
 @dataclass
