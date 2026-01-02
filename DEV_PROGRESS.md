@@ -2,9 +2,9 @@
 
 ## Primer Design Automation Pipeline
 
-**Status:** In Progress (Phases 1-2 Complete)
+**Status:** Demo-ready (Phases 1-4 Complete)
 **Target:** Demo-ready in 2-3 days
-**Last Updated:** 2025-12-31
+**Last Updated:** 2026-01-01
 
 ---
 
@@ -14,8 +14,8 @@
 |-------|-------------|--------|-----|
 | Phase 1 | Foundation | ✅ Complete | Day 1 |
 | Phase 2 | Core Features | ✅ Complete | Day 2 |
-| Phase 3 | Polish | 🔄 In Progress | Day 3 |
-| Phase 4 | Extended (Optional) | ⬜ Pending | If time |
+| Phase 3 | Polish | ✅ Complete | Day 3 |
+| Phase 4 | Extended (Optional) | ✅ Complete (4.1, 4.2) | Done |
 | Phase 5 | GCP Deployment (Optional) | ⬜ Pending | If time |
 
 ---
@@ -86,11 +86,11 @@
   - Name, length, GC%, validation status
 - [x] **1.5.5** Add "Design Primers" button
 
-### 1.6 Phase 1 Verification
-- [ ] **1.6.1** Can upload FASTA file and see sequence stats
-- [ ] **1.6.2** Can paste sequence and see validation
-- [ ] **1.6.3** Primer3 successfully generates candidates
-- [ ] **1.6.4** All imports work, no runtime errors
+### 1.6 Phase 1 Verification ✅
+- [x] **1.6.1** Can upload FASTA file and see sequence stats
+- [x] **1.6.2** Can paste sequence and see validation
+- [x] **1.6.3** Primer3 successfully generates candidates
+- [x] **1.6.4** All imports work, no runtime errors
 
 ---
 
@@ -152,11 +152,11 @@
 - [x] **2.5.3** Add "Export CSV" button to UI
   - Use st.download_button
 
-### 2.6 Phase 2 Verification
-- [ ] **2.6.1** End-to-end flow works: input → design → display
-- [ ] **2.6.2** Scoring produces sensible rankings
-- [ ] **2.6.3** CSV export contains all relevant data
-- [ ] **2.6.4** Color coding correctly reflects status
+### 2.6 Phase 2 Verification ✅
+- [x] **2.6.1** End-to-end flow works: input → design → display
+- [x] **2.6.2** Scoring produces sensible rankings
+- [x] **2.6.3** CSV export contains all relevant data
+- [x] **2.6.4** Color coding correctly reflects status
 
 ---
 
@@ -222,13 +222,14 @@
 
 ## Phase 4: Extended Features (Optional)
 
-### 4.1 TaqMan Probe Design
+### 4.1 TaqMan Probe Design ✅
 - [x] **4.1.1** Define `Probe` dataclass in models.py
-- [ ] **4.1.2** Implement probe candidate generation
+- [x] **4.1.2** Implement probe candidate generation
   - Position between forward and reverse primers
   - Tm 8-10°C higher than primers
-- [ ] **4.1.3** Implement 5' base check (avoid G)
-- [ ] **4.1.4** Add probe to UI display
+- [x] **4.1.3** Implement 5' base check (avoid G)
+- [x] **4.1.4** Add probe to UI display
+- [x] **4.1.5** Add probe to CSV/JSON export
 
 ### 4.2 Batch Processing ✅
 - [x] **4.2.1** Accept multi-sequence FASTA
@@ -323,8 +324,8 @@ graph TD
 - [x] Demo-ready for technical interview
 
 ### Extended (Phases 4-5)
-- [ ] TaqMan probe design works
-- [ ] Batch processing available
+- [x] TaqMan probe design works
+- [x] Batch processing available
 - [ ] App deployed to GCP Cloud Run
 - [ ] CI/CD pipeline configured
 

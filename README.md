@@ -1,14 +1,16 @@
 # Primer Design Automation Pipeline
 
-Automated PCR primer design with quality scoring and ranking.
+Automated PCR primer design with comprehensive QC analysis, TaqMan probe design, and batch processing for qPCR applications.
 
 ## Features
 
 - **FASTA Input**: Upload files or paste sequences directly
+- **Batch Processing**: Design primers for multiple sequences in one run
 - **Primer3 Integration**: Industry-standard primer design engine
+- **TaqMan Probe Design**: Automatic probe generation with optimal Tm delta
 - **QC Analysis**: Tm, GC%, hairpin, self-dimer, cross-dimer checks
 - **Composite Scoring**: Weighted scoring algorithm for optimal primer selection
-- **Export**: Download results as CSV
+- **Export**: Download results as CSV with full probe data
 
 ## Quick Start
 
@@ -43,10 +45,29 @@ primer-design-automation/
 ├── config/
 │   └── defaults.yaml           # Default parameters
 ├── data/sample_sequences/      # Test sequences
-├── tests/                      # Unit tests
+├── scripts/                    # Utility scripts
+├── tests/                      # Unit tests (87 tests)
 └── docs/
     └── PRD.md                  # Product requirements
 ```
+
+## TaqMan Probe Design
+
+The pipeline automatically designs TaqMan probes for real-time qPCR detection:
+
+- **Position**: Between forward and reverse primers
+- **Tm**: 8-10°C higher than primer average for optimal hybridization
+- **5' Base**: Avoids G (quenches FAM reporter dye)
+- **GC Content**: 40-60% for stable binding
+
+### Probe QC Thresholds
+
+| Metric | Pass | Warn | Fail |
+|--------|------|------|------|
+| Tm Delta | +8 to +10°C | +6 to +12°C | Outside range |
+| GC% | 40-60% | 30-70% | <30 or >70% |
+| 5' Base | A, T, C | - | G (quenches FAM) |
+| Length | 20-30 bp | - | Outside range |
 
 ## Scoring Algorithm
 
