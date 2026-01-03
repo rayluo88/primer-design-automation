@@ -1,0 +1,13 @@
+# Elastic Beanstalk ignore file
+.git
+.gitignore
+__pycache__
+*.pyc
+venv/
+.venv/
+.pytest_cache/
+tests/
+*.md
+.dockerignore
+scripts/
+docs/

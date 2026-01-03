@@ -2,6 +2,8 @@
 
 Automated PCR primer design with comprehensive QC analysis, TaqMan probe design, and batch processing for qPCR applications.
 
+**🚀 Live Demo:** https://pcrprimer.streamlit.app/
+
 ## Features
 
 - **FASTA Input**: Upload files or paste sequences directly
@@ -90,6 +92,50 @@ Primers are scored 0-100 based on:
 | Hairpin ΔG | > -2 kcal/mol | -2 to -4 | < -4 kcal/mol |
 | Self-dimer ΔG | > -9 kcal/mol | -9 to -12 | < -12 kcal/mol |
 | Product Size | 70-200 bp | 50-300 bp | Outside range |
+
+## Deployments
+
+- **Streamlit Cloud:** https://pcrprimer.streamlit.app/ (Primary demo)
+- **AWS Elastic Beanstalk:** http://primer-design-env.eba-ak2qz6v5.ap-southeast-1.elasticbeanstalk.com (Self-hosted)
+
+The application is containerized with Docker and deployed to AWS Elastic Beanstalk.
+
+### Quick Deploy
+
+```bash
+# 1. Push Docker image to ECR
+./deploy-to-aws.sh
+
+# 2. Deploy to Elastic Beanstalk
+eb init -p docker -r ap-southeast-1 primer-design
+eb create primer-design-env --instance-type t2.micro
+
+# 3. Cleanup after demo
+eb terminate primer-design-env
+```
+
+### Documentation
+
+- **[AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md)** - Complete AWS Elastic Beanstalk deployment guide
+- **[DEPLOYMENT_SCRIPTS.md](DEPLOYMENT_SCRIPTS.md)** - Deployment automation scripts
+
+### Cost
+
+- **t2.micro instance:** FREE (750 hours/month for 12 months)
+- **After free tier:** ~$23/month
+- **Total deployment time:** ~10 minutes
+
+## Docker
+
+```bash
+# Build locally
+docker build -t primer-design .
+
+# Run locally
+docker run -p 8080:8080 primer-design
+
+# Access at http://localhost:8080
+```
 
 ## License
 

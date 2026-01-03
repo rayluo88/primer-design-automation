@@ -579,18 +579,18 @@ GAAGCTCTATTAGATACAGGAGCAGATGATACAGTATTAGAAGAAATGAGTTTGCCAGGA
 - [ ] Batch processing
 - [ ] Additional visualizations
 
-### Phase 5: GCP Cloud Deployment (Optional)
+### Phase 5: AWS Cloud Deployment (Optional)
 - [ ] Containerize app with Docker
-- [ ] Set up GCP project and enable APIs
-- [ ] Deploy to Cloud Run
+- [ ] Set up AWS account and configure credentials
+- [ ] Deploy to AWS App Runner
 - [ ] Configure custom domain (optional)
-- [ ] Set up CI/CD with Cloud Build
+- [ ] Set up CI/CD with AWS CodeBuild
 
 ---
 
-## 11. GCP Deployment Architecture (Optional)
+## 11. AWS Deployment Architecture (Optional)
 
-### 11.1 Why GCP Cloud Run?
+### 11.1 Why AWS App Runner?
 
 | Benefit | Description |
 |---------|-------------|
@@ -598,7 +598,8 @@ GAAGCTCTATTAGATACAGGAGCAGATGATACAGTATTAGAAGAAATGAGTTTGCCAGGA
 | **Pay-per-use** | Only charged when app is running |
 | **Container-based** | Docker packaging, portable |
 | **Easy HTTPS** | Automatic SSL certificates |
-| **Fast cold start** | Suitable for demo/interview |
+| **Fast deployment** | Suitable for demo/interview |
+| **AWS Integration** | Native integration with ECR, CodeBuild, CloudWatch |
 
 ### 11.2 Architecture Diagram
 
@@ -609,7 +610,7 @@ GAAGCTCTATTAGATACAGGAGCAGATGATACAGTATTAGAAGAAATGAGTTTGCCAGGA
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    GCP CLOUD RUN                                 │
+│                    AWS APP RUNNER                                │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │                   Container Instance                       │  │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐    │  │
@@ -625,7 +626,7 @@ GAAGCTCTATTAGATACAGGAGCAGATGATACAGTATTAGAAGAAATGAGTTTGCCAGGA
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    GCP CONTAINER REGISTRY                        │
+│                AMAZON ELASTIC CONTAINER REGISTRY (ECR)           │
 │                    (stores Docker image)                         │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -653,7 +654,7 @@ COPY . .
 # Expose Streamlit port
 EXPOSE 8080
 
-# Cloud Run uses PORT env variable
+# App Runner uses PORT env variable (default 8080)
 ENV PORT=8080
 
 # Run Streamlit
@@ -678,83 +679,100 @@ tests/
 *.md
 ```
 
-**cloudbuild.yaml** (CI/CD):
+**buildspec.yml** (CI/CD with AWS CodeBuild):
 ```yaml
-steps:
-  # Build Docker image
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/primer-design:$COMMIT_SHA', '.']
+version: 0.2
 
-  # Push to Container Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/primer-design:$COMMIT_SHA']
-
-  # Deploy to Cloud Run
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
-    args:
-      - 'run'
-      - 'deploy'
-      - 'primer-design'
-      - '--image'
-      - 'gcr.io/$PROJECT_ID/primer-design:$COMMIT_SHA'
-      - '--region'
-      - 'asia-southeast1'
-      - '--platform'
-      - 'managed'
-      - '--allow-unauthenticated'
-      - '--memory'
-      - '1Gi'
-      - '--cpu'
-      - '1'
-
-images:
-  - 'gcr.io/$PROJECT_ID/primer-design:$COMMIT_SHA'
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com
+      - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/primer-design
+      - IMAGE_TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION:0:7}
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building the Docker image...
+      - docker build -t $REPOSITORY_URI:latest .
+      - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker images...
+      - docker push $REPOSITORY_URI:latest
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - echo Writing image definitions file...
+      - printf '[{"name":"primer-design","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+artifacts:
+  files: imagedefinitions.json
 ```
 
 ### 11.4 Deployment Commands
 
 ```bash
-# 1. Authenticate with GCP
-gcloud auth login
-gcloud config set project YOUR_PROJECT_ID
+# 1. Configure AWS CLI
+aws configure
+# Enter: AWS Access Key ID, Secret Access Key, Region: ap-southeast-1
 
-# 2. Enable required APIs
-gcloud services enable containerregistry.googleapis.com
-gcloud services enable run.googleapis.com
-gcloud services enable cloudbuild.googleapis.com
+# 2. Create ECR repository
+aws ecr create-repository \
+    --repository-name primer-design \
+    --region ap-southeast-1
 
 # 3. Build and push Docker image
-gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/primer-design
+# Get ECR login token
+aws ecr get-login-password --region ap-southeast-1 | \
+    docker login --username AWS --password-stdin \
+    <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-1.amazonaws.com
 
-# 4. Deploy to Cloud Run
-gcloud run deploy primer-design \
-    --image gcr.io/YOUR_PROJECT_ID/primer-design \
-    --platform managed \
-    --region asia-southeast1 \
-    --allow-unauthenticated \
-    --memory 1Gi \
-    --cpu 1
+# Build Docker image
+docker build -t primer-design .
+
+# Tag image
+docker tag primer-design:latest \
+    <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-1.amazonaws.com/primer-design:latest
+
+# Push to ECR
+docker push <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-1.amazonaws.com/primer-design:latest
+
+# 4. Deploy to App Runner (via AWS Console or CLI)
+# Using AWS Console is recommended for first deployment
+# Or via CLI:
+aws apprunner create-service \
+    --service-name primer-design \
+    --source-configuration '{
+        "ImageRepository": {
+            "ImageIdentifier": "<AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-1.amazonaws.com/primer-design:latest",
+            "ImageRepositoryType": "ECR",
+            "ImageConfiguration": {
+                "Port": "8080"
+            }
+        },
+        "AutoDeploymentsEnabled": true
+    }' \
+    --instance-configuration '{
+        "Cpu": "1 vCPU",
+        "Memory": "2 GB"
+    }' \
+    --region ap-southeast-1
 
 # 5. Get the deployed URL
-gcloud run services describe primer-design \
-    --platform managed \
-    --region asia-southeast1 \
-    --format 'value(status.url)'
+aws apprunner list-services --region ap-southeast-1
 ```
 
 ### 11.5 Cost Estimate
 
 | Resource | Free Tier | Estimated Cost |
 |----------|-----------|----------------|
-| Cloud Run | 2M requests/month free | ~$0 for demo |
-| Container Registry | 0.5 GB free | ~$0 for demo |
-| Cloud Build | 120 min/day free | ~$0 for demo |
+| App Runner | 450,000 vCPU-seconds + 8.75 GB-hours/month free | ~$0 for demo |
+| ECR | 500 MB storage/month free | ~$0 for demo |
+| CodeBuild | 100 build minutes/month free | ~$0 for demo |
 | **Total** | | **Free for demo usage** |
 
-### 11.6 Interview Talking Points (GCP)
+### 11.6 Interview Talking Points (AWS)
 
-> "I deployed the app to GCP Cloud Run—serverless, auto-scaling, pay-per-use. It demonstrates my experience with cloud-based deployment, which is listed as a preferred qualification. The architecture is production-ready: containerized, CI/CD pipeline with Cloud Build, and infrastructure-as-code approach."
+> "I deployed the app to AWS App Runner—serverless, auto-scaling, pay-per-use. It demonstrates my experience with cloud-based deployment on AWS, which is listed as a preferred qualification in the JD. The architecture is production-ready: containerized with ECR, CI/CD pipeline with CodeBuild, infrastructure-as-code approach, and integrated with CloudWatch for monitoring."
 
 ---
 
