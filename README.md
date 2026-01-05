@@ -96,7 +96,7 @@ Primers are scored 0-100 based on:
 ## Deployments
 
 - **Streamlit Cloud:** https://pcrprimer.streamlit.app/ (Primary demo)
-- **AWS Elastic Beanstalk:** http://primer-design-env.eba-ak2qz6v5.ap-southeast-1.elasticbeanstalk.com (Self-hosted)
+- **AWS Elastic Beanstalk:** http://primer-design-env.eba-ak2qz6v5.ap-southeast-1.elasticbeanstalk.com (cloud-hosted)
 
 The application is containerized with Docker and deployed to AWS Elastic Beanstalk.
 
