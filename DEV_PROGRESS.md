@@ -225,8 +225,12 @@
 ### 4.1 TaqMan Probe Design ✅
 - [x] **4.1.1** Define `Probe` dataclass in models.py
 - [x] **4.1.2** Implement probe candidate generation
-  - Position between forward and reverse primers
-  - Tm 8-10°C higher than primers
+  - Position between forward and reverse primers (no overlap with primer 3' end); prefer closer to forward primer
+  - Tm 8-10°C higher than primers (target ~68-70°C if primers are ~58-60°C)
+  - Never start with G at 5' end (quenches FAM and other reporters)
+  - Length: 20-30 bp
+  - GC content: 30-80%; avoid runs of 4+ identical bases
+  - Scoring incorporates probe rules (Tm delta, 5' base, GC, homopolymers, position)
 - [x] **4.1.3** Implement 5' base check (avoid G)
 - [x] **4.1.4** Add probe to UI display
 - [x] **4.1.5** Add probe to CSV/JSON export

@@ -4,14 +4,15 @@ Composite scoring algorithm for primer pairs.
 Weights reflect importance for PCR success:
 - Tm matching: 25% (critical for annealing)
 - GC content: 15% (affects stability)
-- Secondary structures: 30% (dimers kill efficiency)
-- 3' end quality: 20% (specificity)
-- Product size: 10% (practical consideration)
+- Secondary structures: 20% (dimers kill efficiency)
+- 3' end quality: 10% (specificity)
+- Product size: 5% (practical consideration)
+- Probe quality: 25% (signal generation)
 """
 
 from typing import List
 
-from .models import PrimerPair, QCThresholds
+from .models import PrimerPair, QCStatus, QCThresholds
 
 
 def calculate_tm_score(pair: PrimerPair, thresholds: QCThresholds) -> float:
@@ -52,13 +53,16 @@ def calculate_gc_score(pair: PrimerPair, thresholds: QCThresholds) -> float:
 
 def calculate_structure_score(pair: PrimerPair, thresholds: QCThresholds) -> float:
     """
-    Calculate secondary structure score component (max 30 points).
+    Calculate secondary structure score component (max 20 points).
 
     Penalizes:
     - Hairpin formation
     - Self-dimer formation
     - Cross-dimer formation
     """
+    if pair.forward.hairpin_status == QCStatus.FAIL or pair.reverse.hairpin_status == QCStatus.FAIL:
+        return 0.0
+
     score = 30.0
 
     # Hairpin penalties (10 points max penalty)
@@ -85,12 +89,12 @@ def calculate_structure_score(pair: PrimerPair, thresholds: QCThresholds) -> flo
         penalty = min(10, abs(pair.cross_dimer_dg - thresholds.cross_dimer_dg_max) * 1)
         score -= penalty
 
-    return max(0, score)
+    return max(0, score) * (20.0 / 30.0)
 
 
 def calculate_3prime_score(pair: PrimerPair, thresholds: QCThresholds) -> float:
     """
-    Calculate 3' end quality score component (max 20 points).
+    Calculate 3' end quality score component (max 10 points).
 
     Rewards G/C at 3' end, penalizes T.
     """
@@ -105,12 +109,12 @@ def calculate_3prime_score(pair: PrimerPair, thresholds: QCThresholds) -> float:
         else:
             score += 7  # A at 3' = partial points
 
-    return score
+    return score * 0.5
 
 
 def calculate_product_score(pair: PrimerPair, thresholds: QCThresholds) -> float:
     """
-    Calculate product size score component (max 10 points).
+    Calculate product size score component (max 5 points).
 
     Scores based on distance from optimal product size.
     """
@@ -122,13 +126,68 @@ def calculate_product_score(pair: PrimerPair, thresholds: QCThresholds) -> float
 
     # Normalize by range
     range_size = max(thresholds.product_max - thresholds.product_min, 1)
-    score = 10 * max(0, 1 - size_diff / range_size)
+    score = 5 * max(0, 1 - size_diff / range_size)
 
     # Penalty if outside acceptable range
     if size < thresholds.product_min or size > thresholds.product_max:
         score *= 0.5
 
     return score
+
+
+def calculate_probe_score(pair: PrimerPair) -> float:
+    """
+    Calculate probe quality score component (max 25 points).
+
+    Considers:
+    - Tm delta (probe vs primer average)
+    - 5' base (avoid G)
+    - GC content (30-80%)
+    - Length (20-30 bp)
+    - Homopolymer runs (avoid 4+)
+    - Position (prefer closer to forward primer)
+    """
+    if pair.probe is None:
+        return 0.0
+
+    probe = pair.probe
+    if probe.tm_delta_status(pair.primer_avg_tm) == QCStatus.FAIL:
+        return 0.0
+    score = 0.0
+
+    # Tm delta scoring (max 4)
+    tm_delta = probe.tm - pair.primer_avg_tm
+    if 8.0 <= tm_delta <= 10.0:
+        score += 4.0
+    elif 6.0 <= tm_delta <= 12.0:
+        score += 2.0
+
+    # 5' base scoring (max 2)
+    if probe.five_prime_base and probe.five_prime_base.upper() != "G":
+        score += 2.0
+
+    # GC scoring (max 1.5)
+    if 30.0 <= probe.gc_percent <= 80.0:
+        score += 1.5
+    elif 25.0 <= probe.gc_percent <= 85.0:
+        score += 0.5
+
+    # Length scoring (max 1)
+    if 20 <= probe.length <= 30:
+        score += 1.0
+
+    # Homopolymer penalty (max 0.5)
+    if not _has_homopolymer_run(probe.sequence, run_length=4):
+        score += 0.5
+
+    # Position preference (max 1)
+    offset = probe.start - pair.forward.end
+    if offset <= 5:
+        score += 1.0
+    elif offset <= 15:
+        score += 0.5
+
+    return min(25.0, score * 2.5)
 
 
 def calculate_composite_score(pair: PrimerPair, thresholds: QCThresholds = None) -> float:
@@ -152,10 +211,35 @@ def calculate_composite_score(pair: PrimerPair, thresholds: QCThresholds = None)
     structure_score = calculate_structure_score(pair, thresholds)
     three_prime_score = calculate_3prime_score(pair, thresholds)
     product_score = calculate_product_score(pair, thresholds)
+    probe_score = calculate_probe_score(pair)
 
-    total = tm_score + gc_score + structure_score + three_prime_score + product_score
+    total = tm_score + gc_score + structure_score + three_prime_score + product_score + probe_score
 
     return float(round(max(0, min(100, total)), 1))
+
+
+def _has_homopolymer_run(sequence: str, run_length: int = 4) -> bool:
+    """
+    Return True if sequence contains a homopolymer run of length >= run_length.
+    """
+    if run_length <= 1 or not sequence:
+        return False
+
+    longest_run = 1
+    current_run = 1
+    previous = ""
+
+    for base in sequence:
+        if base == previous:
+            current_run += 1
+        else:
+            current_run = 1
+            previous = base
+        longest_run = max(longest_run, current_run)
+        if longest_run >= run_length:
+            return True
+
+    return False
 
 
 def score_pairs(pairs: List[PrimerPair], thresholds: QCThresholds = None) -> List[PrimerPair]:
@@ -218,13 +302,15 @@ def get_score_breakdown(pair: PrimerPair, thresholds: QCThresholds = None) -> di
         "structure_score": round(calculate_structure_score(pair, thresholds), 1),
         "three_prime_score": round(calculate_3prime_score(pair, thresholds), 1),
         "product_score": round(calculate_product_score(pair, thresholds), 1),
+        "probe_score": round(calculate_probe_score(pair), 1),
         "total": round(calculate_composite_score(pair, thresholds), 1),
         "max_possible": 100,
         "weights": {
             "tm": "25%",
             "gc": "15%",
-            "structure": "30%",
-            "three_prime": "20%",
-            "product": "10%",
+            "structure": "20%",
+            "three_prime": "10%",
+            "product": "5%",
+            "probe": "25%",
         },
     }

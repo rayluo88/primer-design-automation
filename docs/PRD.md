@@ -77,7 +77,7 @@ An end-to-end pipeline that:
 #### F4: Scoring & Ranking
 | ID | Requirement | Details |
 |----|-------------|---------|
-| F4.1 | Composite scoring | Weighted score from QC metrics |
+| F4.1 | Composite scoring | Weighted score from QC metrics (includes probe quality if available) |
 | F4.2 | Rank primer pairs | Best to worst by composite score |
 | F4.3 | Visual indicators | Green/Yellow/Red for pass/warn/fail |
 | F4.4 | Top-N output | Show top 5 candidates by default |
@@ -99,8 +99,11 @@ An end-to-end pipeline that:
 | ID | Requirement | Details |
 |----|-------------|---------|
 | F6.1 | Generate probe candidates | Position between primers |
-| F6.2 | Probe Tm validation | 8-10°C higher than primers |
-| F6.3 | 5' base check | Flag if starts with G |
+| F6.2 | Probe Tm validation | 8-10°C higher than primers (target ~68-70°C if primers are ~58-60°C) |
+| F6.3 | 5' base check | Never start with G (quenches reporters) |
+| F6.4 | Probe sequence sanity | Length 20-30 bp; GC 30-80%; avoid runs of 4+ identical bases |
+| F6.5 | Placement preference | No overlap with primer 3' end; prefer closer to forward primer |
+| F6.6 | Primer3 internal oligo | Use Primer3 internal oligo selection when available; fallback to rule-based design |
 
 #### F7: Specificity Check (Simulated)
 | ID | Requirement | Details |
@@ -341,9 +344,10 @@ def calculate_composite_score(pair: PrimerPair, thresholds: QCThresholds) -> flo
     Weights reflect importance for PCR success:
     - Tm matching: 25% (critical for annealing)
     - GC content: 15% (affects stability)
-    - Secondary structures: 30% (dimers kill efficiency)
-    - 3' end quality: 20% (specificity)
-    - Product size: 10% (practical consideration)
+    - Secondary structures: 20% (dimers kill efficiency)
+    - 3' end quality: 10% (specificity)
+    - Product size: 5% (practical consideration)
+    - Probe quality: 25% (signal generation)
     """
     score = 0.0
 
@@ -359,24 +363,24 @@ def calculate_composite_score(pair: PrimerPair, thresholds: QCThresholds) -> flo
     gc_score = 15 * (1 - abs(gc_avg - gc_optimal) / 30)
     score += max(0, gc_score)
 
-    # 3. Secondary Structure Score (30 points)
+    # 3. Secondary Structure Score (20 points)
+    structure_score = 30
     # Hairpin penalty
     hairpin_worst = min(pair.forward.hairpin_dg, pair.reverse.hairpin_dg)
-    if hairpin_worst < thresholds.hairpin_dg_max:
-        score -= 10
-
+    if hairpin_worst < -4.0:  # fail threshold
+        structure_score = 0
+    elif hairpin_worst < thresholds.hairpin_dg_max:
+        structure_score -= 10
     # Self-dimer penalty
     dimer_worst = min(pair.forward.self_dimer_dg, pair.reverse.self_dimer_dg)
     if dimer_worst < thresholds.self_dimer_dg_max:
-        score -= 10
-
+        structure_score -= 10
     # Cross-dimer penalty
     if pair.cross_dimer_dg < thresholds.cross_dimer_dg_max:
-        score -= 10
-    else:
-        score += 30  # Full points if no dimer issues
+        structure_score -= 10
+    score += max(0, structure_score) * (20 / 30)
 
-    # 4. 3' End Score (20 points)
+    # 4. 3' End Score (10 points)
     three_prime_score = 0
     for primer in [pair.forward, pair.reverse]:
         if primer.three_prime_base in thresholds.preferred_3prime:
@@ -385,12 +389,21 @@ def calculate_composite_score(pair: PrimerPair, thresholds: QCThresholds) -> flo
             three_prime_score -= 5
         else:
             three_prime_score += 5
-    score += three_prime_score
+    score += three_prime_score * 0.5
 
-    # 5. Product Size Score (10 points)
+    # 5. Product Size Score (5 points)
     size_diff = abs(pair.product_size - thresholds.product_optimal)
-    size_score = 10 * (1 - size_diff / 100)
+    size_score = 5 * (1 - size_diff / 100)
     score += max(0, size_score)
+
+    # 6. Probe Score (25 points)
+    if pair.probe:
+        tm_delta = pair.probe.tm - pair.primer_avg_tm
+        if tm_delta < 6 or tm_delta > 12:
+            probe_score = 0
+        else:
+            probe_score = 25  # Full points if probe meets Tm/GC/5' base/length rules
+        score += probe_score
 
     return max(0, min(100, score))
 ```

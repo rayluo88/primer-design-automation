@@ -58,18 +58,23 @@ primer-design-automation/
 The pipeline automatically designs TaqMan probes for real-time qPCR detection:
 
 - **Position**: Between forward and reverse primers
-- **Tm**: 8-10°C higher than primer average for optimal hybridization
-- **5' Base**: Avoids G (quenches FAM reporter dye)
-- **GC Content**: 40-60% for stable binding
+- **Tm**: 8-10°C higher than primer average for optimal hybridization (target ~68-70°C if primers are ~58-60°C)
+- **5' Base**: Never start with G (quenches FAM and other reporters)
+- **Length**: 20-30 bp (shorter than older designs due to better quencher chemistry)
+- **Placement**: Between primers with a small gap (no overlap with primer 3' end); prefer closer to forward primer
+- **GC Content**: 30-80%; avoid runs of 4+ identical bases
+
+Implementation detail: the app first tries Primer3 internal oligo selection and falls back to the rule-based probe generator if Primer3 returns no valid probe.
 
 ### Probe QC Thresholds
 
 | Metric | Pass | Warn | Fail |
 |--------|------|------|------|
 | Tm Delta | +8 to +10°C | +6 to +12°C | Outside range |
-| GC% | 40-60% | 30-70% | <30 or >70% |
-| 5' Base | A, T, C | - | G (quenches FAM) |
+| GC% | 30-80% | 25-85% | Outside range |
+| 5' Base | A, T, C | - | G (quenches reporters) |
 | Length | 20-30 bp | - | Outside range |
+| Homopolymers | No runs of 4+ | - | Any run of 4+ |
 
 ## Scoring Algorithm
 
@@ -79,9 +84,10 @@ Primers are scored 0-100 based on:
 |-----------|--------|-------------|
 | Tm Matching | 25% | Distance from 60°C optimal, primer pair matching |
 | GC Content | 15% | Distance from 50% optimal |
-| Secondary Structures | 30% | Hairpin, self-dimer, cross-dimer penalties |
-| 3' End Quality | 20% | G/C preferred, T avoided at 3' end |
-| Product Size | 10% | Distance from optimal (100 bp for qPCR) |
+| Secondary Structures | 20% | Hairpin, self-dimer, cross-dimer penalties |
+| 3' End Quality | 10% | G/C preferred, T avoided at 3' end |
+| Product Size | 5% | Distance from optimal (100 bp for qPCR) |
+| Probe Quality | 25% | Tm delta, 5' base, GC, length, homopolymers, position |
 
 ## QC Thresholds
 

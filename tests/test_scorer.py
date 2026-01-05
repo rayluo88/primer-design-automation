@@ -12,12 +12,13 @@ from src.scorer import (
     calculate_structure_score,
     calculate_3prime_score,
     calculate_product_score,
+    calculate_probe_score,
     calculate_composite_score,
     score_pairs,
     rank_pairs,
     get_score_breakdown,
 )
-from src.models import Primer, PrimerPair, QCThresholds
+from src.models import Primer, PrimerPair, Probe, QCThresholds
 
 
 def create_test_primer(
@@ -51,6 +52,7 @@ def create_test_pair(
     product_size: int = 100,
     fwd_3prime: str = "C",
     rev_3prime: str = "G",
+    with_probe: bool = False,
 ) -> PrimerPair:
     """Create a test primer pair with specified properties."""
     forward = create_test_primer(tm=fwd_tm, gc_percent=fwd_gc, three_prime_base=fwd_3prime)
@@ -63,6 +65,17 @@ def create_test_pair(
         cross_dimer_dg=cross_dimer_dg,
     )
     pair.tm_difference = abs(fwd_tm - rev_tm)
+
+    if with_probe:
+        probe = Probe(
+            sequence="AC" * 10,
+            start=forward.end + 2,
+            end=forward.end + 22,
+            length=20,
+            tm=69.0,
+            gc_percent=50.0,
+        )
+        pair.probe = probe
 
     return pair
 
@@ -139,8 +152,8 @@ class TestCalculateStructureScore:
 
         score = calculate_structure_score(pair, QCThresholds())
 
-        # No structures should get close to max (30)
-        assert score >= 28
+        # No structures should get close to max (20)
+        assert score >= 18
 
     def test_strong_hairpin_reduces_score(self):
         """Test that strong hairpin reduces score."""
@@ -151,8 +164,8 @@ class TestCalculateStructureScore:
 
         score = calculate_structure_score(pair, QCThresholds())
 
-        # Strong hairpin should reduce score
-        assert score < 30
+        # Hairpin fail should zero out structure score
+        assert score == 0.0
 
 
 class TestCalculate3PrimeScore:
@@ -164,8 +177,8 @@ class TestCalculate3PrimeScore:
 
         score = calculate_3prime_score(pair, QCThresholds())
 
-        # G and C at 3' should get max (20)
-        assert score == 20
+        # G and C at 3' should get max (10)
+        assert score == 10
 
     def test_t_at_3prime_low_score(self):
         """Test that T at 3' end gets low score."""
@@ -174,7 +187,7 @@ class TestCalculate3PrimeScore:
         score = calculate_3prime_score(pair, QCThresholds())
 
         # T at both 3' ends should get low score
-        assert score == 4  # 2 + 2
+        assert score == 2  # (2 + 2) * 0.5
 
     def test_a_at_3prime_medium_score(self):
         """Test that A at 3' end gets medium score."""
@@ -183,7 +196,7 @@ class TestCalculate3PrimeScore:
         score = calculate_3prime_score(pair, QCThresholds())
 
         # A at both 3' ends should get medium score
-        assert score == 14  # 7 + 7
+        assert score == 7  # (7 + 7) * 0.5
 
 
 class TestCalculateProductScore:
@@ -196,8 +209,8 @@ class TestCalculateProductScore:
 
         score = calculate_product_score(pair, thresholds)
 
-        # Optimal size should get max (10)
-        assert score == 10
+        # Optimal size should get max (5)
+        assert score == 5
 
     def test_size_outside_range_penalty(self):
         """Test that size outside range gets penalty."""
@@ -207,7 +220,34 @@ class TestCalculateProductScore:
         score = calculate_product_score(pair, thresholds)
 
         # Outside range should have significant penalty
-        assert score < 5
+        assert score < 2.5
+
+
+class TestCalculateProbeScore:
+    """Tests for calculate_probe_score function."""
+
+    def test_valid_probe_scores_high(self):
+        """Probe meeting rules should score high."""
+        pair = create_test_pair(with_probe=True)
+        score = calculate_probe_score(pair)
+
+        assert score >= 20
+
+    def test_missing_probe_scores_zero(self):
+        """Missing probe should score zero."""
+        pair = create_test_pair(with_probe=False)
+        score = calculate_probe_score(pair)
+
+        assert score == 0.0
+
+    def test_probe_tm_delta_fail_zeroes_score(self):
+        """Failing probe Tm delta should zero out probe score."""
+        pair = create_test_pair(with_probe=True)
+        pair.probe.tm = pair.primer_avg_tm + 2.0
+
+        score = calculate_probe_score(pair)
+
+        assert score == 0.0
 
 
 class TestCalculateCompositeScore:
@@ -224,6 +264,7 @@ class TestCalculateCompositeScore:
             product_size=100,
             fwd_3prime="G",
             rev_3prime="C",
+            with_probe=True,
         )
 
         score = calculate_composite_score(pair)
@@ -297,6 +338,7 @@ class TestGetScoreBreakdown:
         assert "structure_score" in breakdown
         assert "three_prime_score" in breakdown
         assert "product_score" in breakdown
+        assert "probe_score" in breakdown
         assert "total" in breakdown
         assert "weights" in breakdown
 
@@ -312,6 +354,7 @@ class TestGetScoreBreakdown:
             + breakdown["structure_score"]
             + breakdown["three_prime_score"]
             + breakdown["product_score"]
+            + breakdown["probe_score"]
         )
 
         # Allow small rounding differences

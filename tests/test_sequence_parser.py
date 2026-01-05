@@ -3,6 +3,8 @@ Unit tests for sequence_parser module.
 """
 
 import pytest
+
+pytest.importorskip("Bio")
 from Bio.SeqRecord import SeqRecord
 
 from src.sequence_parser import (

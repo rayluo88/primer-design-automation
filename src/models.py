@@ -152,10 +152,10 @@ class Probe:
 
     @property
     def gc_status(self) -> QCStatus:
-        """Evaluate GC% against standard thresholds (40-60%)."""
-        if 40.0 <= self.gc_percent <= 60.0:
+        """Evaluate GC% against standard thresholds (30-80%)."""
+        if 30.0 <= self.gc_percent <= 80.0:
             return QCStatus.PASS
-        elif 30.0 <= self.gc_percent <= 70.0:
+        elif 25.0 <= self.gc_percent <= 85.0:
             return QCStatus.WARN
         return QCStatus.FAIL
 

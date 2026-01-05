@@ -641,7 +641,22 @@ def render_results_table(result: DesignResult, thresholds: QCThresholds):
             pair.forward.gc_status,
             pair.reverse.gc_status,
             pair.product_size_status,
+            pair.forward.hairpin_status,
+            pair.reverse.hairpin_status,
+            pair.forward.self_dimer_status,
+            pair.reverse.self_dimer_status,
+            pair.cross_dimer_status,
+            pair.forward.three_prime_status,
+            pair.reverse.three_prime_status,
         ]
+        if pair.probe:
+            statuses.extend(
+                [
+                    pair.probe.tm_delta_status(pair.primer_avg_tm),
+                    pair.probe.gc_status,
+                    pair.probe.five_prime_status,
+                ]
+            )
 
         if any(s == QCStatus.FAIL for s in statuses):
             overall = "FAIL"
@@ -845,12 +860,13 @@ def render_pair_details(pair: PrimerPair, thresholds: QCThresholds):
 
             tm_delta = pair.probe.tm - pair.primer_avg_tm
             tm_delta_status = pair.probe.tm_delta_status(pair.primer_avg_tm)
+            tm_delta_label = tm_delta_status.value.upper()
 
             metrics_probe = [
-                ("Tm Delta", f"+{tm_delta:.1f}°C", tm_delta_status, "Should be +8-10°C above primer avg"),
-                ("GC Content", f"{pair.probe.gc_percent:.1f}%", pair.probe.gc_status, "Optimal: 40-60%"),
-                ("5' Terminal Base", pair.probe.five_prime_base, pair.probe.five_prime_status, "Avoid G (quenches FAM)"),
-                ("Length", f"{pair.probe.length} bp", QCStatus.PASS, "Typical: 20-30 bp"),
+                ("Tm Delta", f"+{tm_delta:.1f}°C ({tm_delta_label})", tm_delta_status, "Target: +8-10°C; warn: 6-12°C"),
+                ("GC Content", f"{pair.probe.gc_percent:.1f}%", pair.probe.gc_status, "Target: 30-80%"),
+                ("5' Terminal Base", pair.probe.five_prime_base, pair.probe.five_prime_status, "Never start with G (quenches reporters)"),
+                ("Length", f"{pair.probe.length} bp", QCStatus.PASS, "Target: 20-30 bp"),
             ]
 
             for name, value, status, tooltip in metrics_probe:
@@ -919,9 +935,10 @@ def render_pair_details(pair: PrimerPair, thresholds: QCThresholds):
     score_components = [
         ("Tm Score", breakdown["tm_score"], 25, "Melting temperature optimization"),
         ("GC Score", breakdown["gc_score"], 15, "GC content balance"),
-        ("Structure Score", breakdown["structure_score"], 30, "Secondary structure avoidance"),
-        ("3' End Score", breakdown["three_prime_score"], 20, "3' terminal base quality"),
-        ("Product Score", breakdown["product_score"], 10, "Amplicon size optimization"),
+        ("Structure Score", breakdown["structure_score"], 20, "Secondary structure avoidance"),
+        ("3' End Score", breakdown["three_prime_score"], 10, "3' terminal base quality"),
+        ("Product Score", breakdown["product_score"], 5, "Amplicon size optimization"),
+        ("Probe Score", breakdown["probe_score"], 25, "Probe Tm/GC/5' base/position checks"),
     ]
 
     for name, score, max_score, description in score_components:

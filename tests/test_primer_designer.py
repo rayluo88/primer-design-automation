@@ -6,13 +6,16 @@ Tests Primer3 wrapper functionality and primer pair generation.
 
 import pytest
 
+pytest.importorskip("primer3")
+
 from src.primer_designer import (
     design_primers,
+    design_probe,
     get_primer3_settings_from_thresholds,
     DEFAULT_PRIMER3_SETTINGS,
     _th_to_dg,
 )
-from src.models import PrimerPair, QCThresholds
+from src.models import Primer, PrimerPair, QCThresholds
 
 
 # Test sequence - synthetic 200bp sequence with balanced GC content
@@ -236,3 +239,109 @@ class TestDefaultSettings:
         # GC should be 40-60%
         assert settings["PRIMER_MIN_GC"] >= 30.0
         assert settings["PRIMER_MAX_GC"] <= 70.0
+
+
+class TestDesignProbe:
+    """Tests for design_probe function."""
+
+    def _make_pair(self) -> PrimerPair:
+        forward = Primer(
+            sequence="A" * 20,
+            start=0,
+            end=20,
+            length=20,
+            tm=60.0,
+            gc_percent=0.0,
+        )
+        reverse = Primer(
+            sequence="T" * 20,
+            start=170,
+            end=190,
+            length=20,
+            tm=60.0,
+            gc_percent=0.0,
+        )
+        return PrimerPair(forward=forward, reverse=reverse, product_size=190)
+
+    def test_never_starts_with_g(self, monkeypatch):
+        """Probe should never start with G at 5' end."""
+        monkeypatch.setattr("primer3.calc_tm", lambda *_args, **_kwargs: 69.0)
+
+        pair = self._make_pair()
+
+        # Ensure the earliest candidate would start with G if not filtered.
+        sequence = ("A" * 22) + ("G" + "AC" * 90)
+        probe = design_probe(sequence, pair, min_length=20, max_length=20)
+
+        assert probe is not None
+        assert probe.sequence[0] != "G"
+
+    def test_prefers_closer_to_forward_primer(self, monkeypatch):
+        """When multiple candidates are equivalent, prefer the earliest start."""
+        monkeypatch.setattr("primer3.calc_tm", lambda *_args, **_kwargs: 69.0)
+
+        pair = self._make_pair()
+        search_start = pair.forward.end + 2
+
+        # Build a sequence where all candidate probes are identical in Tm/GC.
+        # Use repeating "AC" so any 20bp window has ~50% GC and starts with A at search_start.
+        sequence = ("A" * search_start) + ("AC" * 200)
+        probe = design_probe(sequence, pair, min_length=20, max_length=20)
+
+        assert probe is not None
+        assert probe.start == search_start
+
+    def test_avoids_homopolymer_runs(self, monkeypatch):
+        """Avoid runs of 4+ identical bases in the probe."""
+        monkeypatch.setattr("primer3.calc_tm", lambda *_args, **_kwargs: 69.0)
+
+        pair = self._make_pair()
+        search_start = pair.forward.end + 2
+
+        # Earliest region contains homopolymers; later region is safe.
+        sequence = ("A" * search_start) + ("AAAA" + "AC" * 200)
+        probe = design_probe(sequence, pair, min_length=20, max_length=20)
+
+        assert probe is not None
+        assert "AAAA" not in probe.sequence
+
+    def test_allows_fallback_tm_delta(self, monkeypatch):
+        """Allow probes outside 6-12°C delta when no in-band candidates exist."""
+        monkeypatch.setattr("primer3.calc_tm", lambda *_args, **_kwargs: 61.0)
+
+        pair = self._make_pair()
+        sequence = ("A" * 22) + ("AC" * 120)
+        probe = design_probe(sequence, pair, min_length=20, max_length=20)
+
+        assert probe is not None
+
+    def test_rejects_lower_than_primers(self, monkeypatch):
+        """Reject probes with Tm below primer average."""
+        monkeypatch.setattr("primer3.calc_tm", lambda *_args, **_kwargs: 54.0)
+
+        pair = self._make_pair()
+        sequence = ("A" * 22) + ("AC" * 120)
+        probe = design_probe(sequence, pair, min_length=20, max_length=20)
+
+        assert probe is None
+
+    def test_allows_warn_tm_delta(self, monkeypatch):
+        """Allow probes with Tm delta in the 6-12°C warn band."""
+        monkeypatch.setattr("primer3.calc_tm", lambda *_args, **_kwargs: 66.0)
+
+        pair = self._make_pair()
+        sequence = ("A" * 22) + ("AC" * 120)
+        probe = design_probe(sequence, pair, min_length=20, max_length=20)
+
+        assert probe is not None
+
+    def test_primer3_fallback_when_no_internal_oligo(self, monkeypatch):
+        """Fallback to custom design when Primer3 returns no internal oligo."""
+        monkeypatch.setattr("primer3.bindings.design_primers", lambda *_args, **_kwargs: {})
+        monkeypatch.setattr("primer3.calc_tm", lambda *_args, **_kwargs: 69.0)
+
+        pair = self._make_pair()
+        sequence = ("A" * 22) + ("AC" * 120)
+        probe = design_probe(sequence, pair, min_length=20, max_length=20)
+
+        assert probe is not None

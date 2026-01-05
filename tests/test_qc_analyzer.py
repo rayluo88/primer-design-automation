@@ -6,6 +6,8 @@ Tests thermodynamic calculations: Tm, GC%, hairpin ΔG, dimer ΔG.
 
 import pytest
 
+pytest.importorskip("primer3")
+
 from src.qc_analyzer import (
     calculate_tm,
     calculate_gc,
